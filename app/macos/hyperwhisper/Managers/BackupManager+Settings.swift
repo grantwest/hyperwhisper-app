@@ -68,6 +68,11 @@ extension BackupManager {
         settingsManager.storeWordTimestamps = settings.textOutput.storeWordTimestamps
 
         // Shortcut settings
+        // Absent, null, and unknown values leave the current toggle mode unchanged.
+        if let rawMode = settings.shortcuts.toggleRecordingMode,
+           let mode = ToggleRecordingMode(rawValue: rawMode) {
+            settingsManager.toggleRecordingMode = mode
+        }
         if let mode = PushToTalkMode(rawValue: settings.shortcuts.pushToTalkMode) {
             settingsManager.pushToTalkMode = mode
         }

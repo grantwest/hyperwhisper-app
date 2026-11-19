@@ -31,6 +31,23 @@ import Combine
 import ServiceManagement
 import AppKit
 
+// MARK: - Toggle Recording Mode
+
+/// Custom preserves the existing KeyboardShortcuts binding when switching modes.
+enum ToggleRecordingMode: String, CaseIterable, Codable {
+    case custom
+    case rightCommand
+
+    var localizedName: String {
+        switch self {
+        case .custom:
+            return NSLocalizedString("settings.shortcuts.pushToTalk.mode.custom", value: "Custom Shortcut", comment: "")
+        case .rightCommand:
+            return NSLocalizedString("settings.shortcuts.mode.rightCommand", value: "Right Command Key", comment: "")
+        }
+    }
+}
+
 // MARK: - Push to Talk Mode Enum
 
 /// Represents the different modes for Push to Talk functionality
@@ -41,6 +58,7 @@ import AppKit
 /// - control: Hold Control key to record (bare modifier, requires Accessibility permission)
 /// - leftOption: Hold Left Option key to record (bare modifier, requires Accessibility permission)
 /// - rightOption: Hold Right Option key to record (bare modifier, requires Accessibility permission)
+/// - rightCommand: Hold Right Command key to record (bare modifier, requires Accessibility permission)
 /// - custom: Use custom keyboard shortcut via KeyboardShortcuts library
 enum PushToTalkMode: String, CaseIterable, Codable {
     case disabled
@@ -48,9 +66,14 @@ enum PushToTalkMode: String, CaseIterable, Codable {
     case control
     case leftOption
     case rightOption
+    case rightCommand
     case fnControl
     case fnOption
     case custom
+
+    func effectiveMode(toggleRecordingMode: ToggleRecordingMode) -> Self {
+        self == .rightCommand && toggleRecordingMode == .rightCommand ? .disabled : self
+    }
 
     var localizedName: String {
         switch self {
@@ -64,6 +87,8 @@ enum PushToTalkMode: String, CaseIterable, Codable {
             return NSLocalizedString("settings.shortcuts.pushToTalk.mode.leftOption", value: "Left Option Key", comment: "")
         case .rightOption:
             return NSLocalizedString("settings.shortcuts.pushToTalk.mode.rightOption", value: "Right Option Key", comment: "")
+        case .rightCommand:
+            return ToggleRecordingMode.rightCommand.localizedName
         case .fnControl:
             return NSLocalizedString("settings.shortcuts.pushToTalk.mode.fnControl", value: "FN + Control", comment: "")
         case .fnOption:
@@ -150,6 +175,8 @@ class SettingsManager: ObservableObject {
     @AppStorage("historyRetentionDays") var historyRetentionDays: Int = 30
 
     // MARK: - Keyboard Shortcut Settings
+
+    @AppStorage("toggleRecordingMode") var toggleRecordingMode: ToggleRecordingMode = .custom
 
     /// Push to Talk feature toggle - enabled/disabled in settings (kept for backward compatibility)
     @AppStorage("pushToTalkEnabled") var pushToTalkEnabled: Bool = false

@@ -96,6 +96,7 @@ final class BareModifierKeyMonitor {
         case control
         case leftOption
         case rightOption
+        case rightCommand
     }
 
     // MARK: - Properties
@@ -118,6 +119,7 @@ final class BareModifierKeyMonitor {
 
     /// Whether we detected the modifier key is currently pressed
     private var isModifierPressed = false
+    private var rightCommandState = RightCommandKeyState()
 
     /// The shared state machine's record. Owned here; the core is a pure
     /// function over it.
@@ -202,7 +204,10 @@ final class BareModifierKeyMonitor {
 
     // MARK: - Initialization
 
-    private init() {}
+    /// An initial mode permits permission-free event tests; `start` installs the tap.
+    init(mode: ModifierKey? = nil) {
+        currentMode = mode
+    }
 
     // MARK: - Public Interface
 
@@ -215,6 +220,7 @@ final class BareModifierKeyMonitor {
         }
 
         currentMode = mode
+        rightCommandState = RightCommandKeyState()
         isMonitoring = true
         isModifierPressed = false
         machine = pttInitialState()
@@ -386,9 +392,30 @@ final class BareModifierKeyMonitor {
 
     /// Handle flagsChanged events from CGEventTap
     /// This is called when modifier keys are pressed or released.
-    private func handleFlagsChangedEvent(_ flags: CGEventFlags) {
+    func handleFlagsChangedEvent(_ flags: CGEventFlags) {
         if isSuspended { return }
         guard let currentMode = currentMode else { return }
+
+        if currentMode == .rightCommand {
+            let bareRelease = rightCommandState.flagsChanged(flags)
+            if machine.state == .latchActive || machine.state == .unlatchPending {
+                // Validate the whole press before counting an unlock tap.
+                // Command+C / Command+V must not unlock a latched recording.
+                if bareRelease {
+                    processKeyPress(isPressed: true)
+                    processKeyPress(isPressed: false)
+                }
+                return
+            }
+            if rightCommandState.isPressed && !rightCommandState.isBarePress {
+                if machine.state == .waitingForActivation || machine.state == .pttActive {
+                    handleInterference()
+                }
+                // Do not re-arm when another key lifts before right Command.
+                isModifierPressed = true
+                return
+            }
+        }
 
         // If we're in activation or active PTT and see extra modifiers, treat as interference.
         if machine.state == .waitingForActivation || machine.state == .pttActive {
@@ -481,9 +508,10 @@ final class BareModifierKeyMonitor {
     /// Handle keyDown events from CGEventTap
     /// Used for interference detection to cancel activation/recording when the key
     /// is part of a shortcut (e.g., Cmd+C, Cmd+V).
-    private func handleKeyDownEvent() {
+    func handleKeyDownEvent() {
         if isSuspended { return }
         guard currentMode != nil else { return }
+        if currentMode == .rightCommand { rightCommandState.keyDown() }
 
         // Only treat key presses as interference while we're in the activation window
         // or actively recording in PTT mode (non-latched).
@@ -791,6 +819,8 @@ final class BareModifierKeyMonitor {
             return flags.contains(.maskSecondaryFn)
         case .control:
             return flags.contains(.maskControl)
+        case .rightCommand:
+            return RightCommandKeyFlags.isPressed(flags)
         case .leftOption, .rightOption:
             // CGEventFlags doesn't directly distinguish left/right Option
             // We check the raw value for side-specific detection
@@ -830,6 +860,9 @@ final class BareModifierKeyMonitor {
                 interferingFlags.removeAll { $0 == .maskControl }
             case .leftOption, .rightOption:
                 interferingFlags.removeAll { $0 == .maskAlternate }
+            case .rightCommand:
+                interferingFlags.removeAll { $0 == .maskCommand }
+                if RightCommandKeyFlags.hasInterference(flags) { return true }
             }
         }
 

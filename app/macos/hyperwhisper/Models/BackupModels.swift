@@ -482,6 +482,9 @@ struct BackupShortcutSettings: Codable {
     /// `nil`, and the restore then leaves every shortcut as it is. See
     /// `BackupKeyboardShortcuts` for the per-entry rules.
     var keyboardShortcuts: [String: BackupShortcutBinding]? = nil
+    /// Optional: older backups leave the current toggle mode unchanged.
+    /// Raw values are `custom` and `rightCommand`; unknown values are ignored on restore.
+    var toggleRecordingMode: String? = nil
 }
 
 /// One action's key combo in a backup (#1481): `.combo` holds the two Carbon values the

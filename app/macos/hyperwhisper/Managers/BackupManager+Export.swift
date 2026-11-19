@@ -115,7 +115,8 @@ extension BackupManager {
                 quickCaptureModeId: settingsManager.quickCaptureModeId,
                 // The key combos themselves (#1481) — without them a restore
                 // silently lost every custom shortcut.
-                keyboardShortcuts: BackupKeyboardShortcuts.liveSnapshot()
+                keyboardShortcuts: BackupKeyboardShortcuts.liveSnapshot(),
+                toggleRecordingMode: settingsManager.toggleRecordingMode.rawValue
             ),
             aiModel: BackupAIModelSettings(
                 showExperimentalModels: settingsManager.showExperimentalModels,

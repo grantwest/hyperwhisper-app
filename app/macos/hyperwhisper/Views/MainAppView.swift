@@ -614,7 +614,10 @@ struct MenuBarItems: View {
     /// Called on appear and when shortcuts change.
     private func updateShortcutDisplay() {
         // First, check if there's a configured toggle recording shortcut
-        if let shortcut = KeyboardShortcuts.getShortcut(for: .toggleRecordingWithTranscription),
+        if settingsManager.toggleRecordingMode == .rightCommand {
+            menuKeyboardShortcut = nil
+            pttHintText = ToggleRecordingMode.rightCommand.localizedName
+        } else if let shortcut = KeyboardShortcuts.getShortcut(for: .toggleRecordingWithTranscription),
            let keyboardShortcut = makeKeyboardShortcut(from: shortcut) {
             // User has a valid toggle shortcut configured - show it
             menuKeyboardShortcut = keyboardShortcut
@@ -650,6 +653,8 @@ struct MenuBarItems: View {
             return "Hold ⌥"
         case .rightOption:
             return "Hold ⌥"
+        case .rightCommand:
+            return "Hold Right ⌘"
         case .fnControl:
             return "Hold FN+⌃"
         case .fnOption:

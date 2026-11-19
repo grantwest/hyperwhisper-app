@@ -162,11 +162,19 @@ category-keyed extension above) and round-trip losslessly through the universal 
 
 | Extension Key (`platformExtensions.macos.settings.shortcuts.*`) | macOS Source | Windows Source |
 |---|---|---|
-| `pushToTalkMode` | `SettingsManager.pushToTalkMode` (raw value) | — |
+| `pushToTalkMode` | `SettingsManager.pushToTalkMode` (raw value; includes `rightCommand`) | — |
+| `toggleRecordingMode` | `SettingsManager.toggleRecordingMode` (raw value: `custom` or `rightCommand`; optional on import) | — |
 | `pushToTalkDoublePressEnabled` | `SettingsManager.pushToTalkDoublePressEnabled` | — |
 | `quickCaptureEnabled` | `SettingsManager.quickCaptureEnabled` | — |
 | `quickCaptureModeId` | `SettingsManager.quickCaptureModeId` (UUID string, `""` = current mode) | — |
 | `keyboardShortcuts` | The KeyboardShortcuts combo of every `KeyboardShortcuts.Name` (`Extensions/KeyboardShortcuts+Names.swift`), keyed by its raw value: `{"carbonKeyCode": Int, "carbonModifiers": Int}` (the Carbon values the package itself persists), or `null` for an action with no shortcut. Written by `BackupKeyboardShortcuts` (#1481) | — |
+
+`toggleRecordingMode` restore rules (macOS, v1 and v2 alike): export the current raw value.
+An absent, null, or unknown value leaves the current preference unchanged. A new profile defaults
+to `custom`. Keep the saved `toggleRecordingWithTranscription` combo in `keyboardShortcuts` even
+when `rightCommand` is selected, so a return to `custom` keeps that combo. `pushToTalkMode` also
+accepts `rightCommand`. Both values stay macOS-only; other platforms preserve this slice without
+applying it. The core carries the whole `shortcuts` category, so no new core mapping is needed.
 
 `keyboardShortcuts` restore rules (macOS, v1 and v2 alike): an absent map leaves every shortcut
 as it is — a backup written before #1481 has none; a name absent from the map leaves that shortcut

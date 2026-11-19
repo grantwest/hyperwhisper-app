@@ -492,7 +492,9 @@ class AudioRecordingManager: NSObject, ObservableObject {
     /// `cancelShortcutHandlerRegistered` in RecordingTranscriptionFlow.)
     private static var customPushToTalkHandlersConfigured = false
 
-    /// Configure Push to Talk monitors based on current settings
+    private(set) var recordingShortcutConfiguration = RecordingShortcutConfiguration()
+
+    /// Configure recording inputs together, preserving an active recording's input.
     public func setupPushToTalk() {
         guard let settingsManager = settingsManager else { return }
 
@@ -502,18 +504,38 @@ class AudioRecordingManager: NSObject, ObservableObject {
         // able to stop it via the modifier. Defer the reconfigure until the
         // recording finishes; it is reapplied from the recording-end binding
         // once the monitor is safely idle.
-        if isRecording {
-            AppLogger.audio.info("Deferring Push to Talk reconfigure — recording in progress")
+        let previous = recordingShortcutConfiguration
+        guard recordingShortcutConfiguration.update(
+            toggleMode: settingsManager.toggleRecordingMode,
+            pushToTalkMode: settingsManager.pushToTalkMode,
+            isRecording: isRecording
+        ) else {
+            AppLogger.audio.info("Deferring recording shortcut reconfigure — recording in progress")
             needsPushToTalkReconfigure = true
             return
         }
+        if recordingShortcutConfiguration != previous {
+            NotificationCenter.default.post(name: .recordingShortcutConfigurationDidChange, object: nil)
+        }
 
-        let pushToTalkMode = settingsManager.pushToTalkMode
+        let pushToTalkMode = recordingShortcutConfiguration.pushToTalkMode
         AppLogger.audio.debug("Configuring Push to Talk for mode: \(pushToTalkMode.rawValue)")
 
-        // Stop existing monitoring (both bare modifier and ensure clean slate)
+        // Stop the old PTT input before assigning right Command to Toggle.
+        // Defer BOTH inputs during a recording so imported duplicate bindings
+        // cannot install a toggle tap beside an active PTT tap.
         BareModifierKeyMonitor.shared.stop()
-        
+        if recordingShortcutConfiguration.toggleMode == .rightCommand {
+            appState?.isToggleRecordingShortcutHeld = false
+            if AccessibilityHelper.shared.hasAccessibilityPermission() {
+                RightCommandKeyMonitor.shared.start()
+            } else {
+                waitForAccessibilityPermissionIfNeeded()
+            }
+        } else {
+            RightCommandKeyMonitor.shared.stop()
+        }
+
         // Configure double press behavior
         // Combo modes (FN+Control, FN+Option) don't support double-press-to-lock —
         // a quick press-and-release should silently exit, not start recording.
@@ -522,7 +544,7 @@ class AudioRecordingManager: NSObject, ObservableObject {
 
         if pushToTalkMode == .disabled {
             AppLogger.audio.debug("📴 Push to Talk is disabled")
-        } else if [.fn, .control, .leftOption, .rightOption, .fnControl, .fnOption].contains(pushToTalkMode) {
+        } else if [.fn, .control, .leftOption, .rightOption, .rightCommand, .fnControl, .fnOption].contains(pushToTalkMode) {
             // BARE MODIFIER MODE (single key or combo)
 
             if AccessibilityHelper.shared.hasAccessibilityPermission() {
@@ -603,6 +625,7 @@ class AudioRecordingManager: NSObject, ObservableObject {
                 }
 
                 Task { @MainActor in
+                    guard self.recordingShortcutConfiguration.pushToTalkMode == pushToTalkMode else { return }
                     switch pushToTalkMode {
                     case .fnControl: BareModifierKeyMonitor.shared.start(combo: [.fn, .control])
                     case .fnOption: BareModifierKeyMonitor.shared.start(combo: [.fn, .leftOption])
@@ -610,6 +633,7 @@ class AudioRecordingManager: NSObject, ObservableObject {
                     case .control: BareModifierKeyMonitor.shared.start(mode: .control)
                     case .leftOption: BareModifierKeyMonitor.shared.start(mode: .leftOption)
                     case .rightOption: BareModifierKeyMonitor.shared.start(mode: .rightOption)
+                    case .rightCommand: BareModifierKeyMonitor.shared.start(mode: .rightCommand)
                     default: return
                     }
                     AppLogger.ui.debug("✅ Bare modifier monitor started for \(pushToTalkMode.rawValue)")
@@ -636,7 +660,7 @@ class AudioRecordingManager: NSObject, ObservableObject {
 
             KeyboardShortcuts.onKeyDown(for: .pushToTalk) { [weak self] in
                 Task { @MainActor in
-                    guard let self = self else { return }
+                    guard let self = self, self.recordingShortcutConfiguration.pushToTalkMode == .custom else { return }
                     self.transcriptionPipeline?.prewarmCloudConnectionIfActive()
                     if self.appState?.isToggleRecordingShortcutHeld == true {
                         AppLogger.ui.debug("🚫 Push to Talk pressed while toggle shortcut held - ignoring")
@@ -654,7 +678,7 @@ class AudioRecordingManager: NSObject, ObservableObject {
 
             KeyboardShortcuts.onKeyUp(for: .pushToTalk) { [weak self] in
                 Task { @MainActor in
-                    guard let self = self else { return }
+                    guard let self = self, self.recordingShortcutConfiguration.pushToTalkMode == .custom else { return }
                     
                     if !self.isRecording {
                         AppLogger.ui.debug("🚫 Push to Talk released but not recording - ignoring")

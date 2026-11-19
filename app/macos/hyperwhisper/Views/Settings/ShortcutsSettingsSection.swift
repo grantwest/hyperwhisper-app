@@ -42,9 +42,42 @@ struct ShortcutsSettingsSection: View {
                     subtitle: "settings.shortcuts.toggleRecording.subtitle",
                     standalone: false
                 ) {
-                    KeyboardShortcuts.Recorder(for: .toggleRecordingWithTranscription) { _ in
-                        NotificationCenter.default.post(name: .shortcutDidChange, object: nil)
-                        AppLogger.ui.debug("⌨️ Toggle Recording shortcut updated via settings")
+                    VStack(alignment: .trailing, spacing: 8) {
+                        Picker(selection: Binding(
+                            get: { settingsManager.toggleRecordingMode },
+                            set: { mode in
+                                if mode == .rightCommand,
+                                   let owner = ShortcutConflictGuard.rightCommandConflict(
+                                       recording: .toggleRecordingWithTranscription,
+                                       toggleRecordingMode: settingsManager.toggleRecordingMode,
+                                       pushToTalkMode: settingsManager.pushToTalkMode
+                                   ) {
+                                    ShortcutConflictGuard.showConflictAlert(owner: owner)
+                                    return
+                                }
+                                if mode == .custom,
+                                   let owner = ShortcutConflictGuard.shared.savedShortcutConflict(for: .toggleRecordingWithTranscription) {
+                                    ShortcutConflictGuard.showConflictAlert(owner: owner)
+                                    return
+                                }
+                                settingsManager.toggleRecordingMode = mode
+                                NotificationCenter.default.post(name: .shortcutDidChange, object: nil)
+                            }
+                        )) {
+                            ForEach(ToggleRecordingMode.allCases, id: \.self) { mode in
+                                Text(mode.localizedName).tag(mode)
+                            }
+                        } label: { EmptyView() }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 180)
+
+                        if settingsManager.toggleRecordingMode == .custom {
+                            KeyboardShortcuts.Recorder(for: .toggleRecordingWithTranscription) { _ in
+                                NotificationCenter.default.post(name: .shortcutDidChange, object: nil)
+                                AppLogger.ui.debug("⌨️ Toggle Recording shortcut updated via settings")
+                            }
+                        }
                     }
                 }
 
@@ -130,6 +163,20 @@ struct ShortcutsSettingsSection: View {
                         Picker(selection: Binding(
                             get: { settingsManager.pushToTalkMode },
                             set: { newValue in
+                                if newValue == .rightCommand,
+                                   let owner = ShortcutConflictGuard.rightCommandConflict(
+                                       recording: .pushToTalk,
+                                       toggleRecordingMode: settingsManager.toggleRecordingMode,
+                                       pushToTalkMode: settingsManager.pushToTalkMode
+                                   ) {
+                                    ShortcutConflictGuard.showConflictAlert(owner: owner)
+                                    return
+                                }
+                                if newValue == .custom,
+                                   let owner = ShortcutConflictGuard.shared.savedShortcutConflict(for: .pushToTalk) {
+                                    ShortcutConflictGuard.showConflictAlert(owner: owner)
+                                    return
+                                }
                                 settingsManager.pushToTalkMode = newValue
                                 NotificationCenter.default.post(name: .shortcutDidChange, object: nil)
                             }
@@ -332,6 +379,7 @@ struct ShortcutsSettingsSection: View {
     }
 
     private func resetKeyboardShortcuts() {
+        settingsManager.toggleRecordingMode = .custom
         KeyboardShortcuts.reset(
             .toggleRecordingWithTranscription,
             .cancelRecording,

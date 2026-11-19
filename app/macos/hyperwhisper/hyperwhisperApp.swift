@@ -1155,15 +1155,17 @@ struct MenuBarIconView: View {
         AppLogger.ui.debug("🔧 Setting up global hotkeys...")
         
         // MARK: Toggle Recording Shortcut
-        KeyboardShortcuts.onKeyDown(for: .toggleRecordingWithTranscription) { [weak appState, weak transcriptionPipeline] in
+        KeyboardShortcuts.onKeyDown(for: .toggleRecordingWithTranscription) { [weak appState, weak transcriptionPipeline, weak audioManager] in
             Task { @MainActor in
+                guard audioManager?.recordingShortcutConfiguration.toggleMode == .custom else { return }
                 appState?.isToggleRecordingShortcutHeld = true
                 transcriptionPipeline?.prewarmCloudConnectionIfActive()
             }
         }
 
-        KeyboardShortcuts.onKeyUp(for: .toggleRecordingWithTranscription) { [weak appState, weak audioManager] in
+        let toggleRecording = { [weak appState, weak audioManager] (mode: ToggleRecordingMode) in
             Task { @MainActor in
+                guard audioManager?.recordingShortcutConfiguration.toggleMode == mode, KeyboardShortcuts.isEnabled else { return }
                 defer { appState?.isToggleRecordingShortcutHeld = false }
 
                 AppLogger.ui.debug("⌨️ Toggle recording shortcut pressed")
@@ -1189,6 +1191,13 @@ struct MenuBarIconView: View {
                 audioManager.toggleRecordingFromShortcut(trigger: .shortcut)
                 AppLogger.ui.debug("⌨️ Toggled recording via keyboard shortcut")
             }
+        }
+
+        KeyboardShortcuts.onKeyUp(for: .toggleRecordingWithTranscription) {
+            _ = toggleRecording(.custom)
+        }
+        RightCommandKeyMonitor.shared.onToggle = {
+            _ = toggleRecording(.rightCommand)
         }
 
         // MARK: Push to Talk
@@ -1280,15 +1289,19 @@ struct MenuBarIconView: View {
         syncFeatureGatedHotkeys()
 
         // A recorder refuses a combo another action uses, and says which (#1474).
-        ShortcutConflictGuard.shared.start()
+        ShortcutConflictGuard.shared.start { [weak audioManager] in
+            audioManager?.recordingShortcutConfiguration ?? RecordingShortcutConfiguration()
+        }
 
-        NotificationCenter.default.addObserver(
-            forName: .shortcutDidChange,
-            object: nil,
-            queue: .main
-        ) { _ in
-            Task { @MainActor in
-                self.syncFeatureGatedHotkeys()
+        for name in [Notification.Name.shortcutDidChange, .recordingShortcutConfigurationDidChange] {
+            NotificationCenter.default.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    self.syncFeatureGatedHotkeys()
+                }
             }
         }
 
@@ -1305,6 +1318,8 @@ struct MenuBarIconView: View {
     @MainActor
     private func syncFeatureGatedHotkeys() {
         let gated: [(name: KeyboardShortcuts.Name, isEnabled: Bool)] = [
+            (.toggleRecordingWithTranscription, audioManager.recordingShortcutConfiguration.toggleMode == .custom),
+            (.pushToTalk, audioManager.recordingShortcutConfiguration.pushToTalkMode == .custom),
             (.quickCapture, settingsManager.quickCaptureEnabled),
             (.startStreaming, settingsManager.streamingEnabled),
         ]

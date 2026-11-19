@@ -41,11 +41,13 @@ final class ShortcutConflictGuard {
     /// Live actions whose hotkey the library had registered when guarding began.
     private var registeredBeforeGuarding: Set<KeyboardShortcuts.Name> = []
     private var isGuarding = false
+    private var recordingConfiguration: (() -> RecordingShortcutConfiguration)?
 
     private init() {}
 
     /// Starts listening for recorder activity. Idempotent.
-    func start() {
+    func start(recordingConfiguration: @escaping () -> RecordingShortcutConfiguration) {
+        self.recordingConfiguration = recordingConfiguration
         guard observer == nil else { return }
         observer = NotificationCenter.default.addObserver(
             forName: Self.recorderActiveStatusDidChange,
@@ -64,15 +66,51 @@ final class ShortcutConflictGuard {
     /// The actions whose combo is live right now. A feature that is off has
     /// released its hotkey and its row is hidden, so it does not block a combo.
     nonisolated static func liveActions(
+        toggleRecordingMode: ToggleRecordingMode = .custom,
         pushToTalkMode: PushToTalkMode,
         quickCaptureEnabled: Bool,
-        streamingEnabled: Bool
+        streamingEnabled: Bool,
+        appliedConfiguration: RecordingShortcutConfiguration? = nil
     ) -> [KeyboardShortcuts.Name] {
-        var names: [KeyboardShortcuts.Name] = [.toggleRecordingWithTranscription, .cancelRecording, .changeMode]
+        var names: [KeyboardShortcuts.Name] = [.cancelRecording, .changeMode]
+        if toggleRecordingMode == .custom { names.insert(.toggleRecordingWithTranscription, at: 0) }
         if pushToTalkMode == .custom { names.append(.pushToTalk) }
         if quickCaptureEnabled { names.append(.quickCapture) }
         if streamingEnabled { names.append(.startStreaming) }
+        // Requested modes reserve pending bindings. Applied modes also reserve
+        // inputs that must remain live until the current recording finishes.
+        if appliedConfiguration?.toggleMode == .custom && !names.contains(.toggleRecordingWithTranscription) {
+            names.insert(.toggleRecordingWithTranscription, at: 0)
+        }
+        if appliedConfiguration?.pushToTalkMode == .custom && !names.contains(.pushToTalk) {
+            names.append(.pushToTalk)
+        }
         return names
+    }
+
+    /// Modifier-only inputs cannot use Carbon hotkey registration, but must
+    /// follow the same ownership rule as custom shortcut combinations.
+    nonisolated static func rightCommandConflict(
+        recording: KeyboardShortcuts.Name,
+        toggleRecordingMode: ToggleRecordingMode,
+        pushToTalkMode: PushToTalkMode
+    ) -> KeyboardShortcuts.Name? {
+        conflictingAction(for: true, recording: recording, bindings: [
+            (.toggleRecordingWithTranscription, toggleRecordingMode == .rightCommand),
+            (.pushToTalk, pushToTalkMode == .rightCommand),
+        ])
+    }
+
+    func savedShortcutConflict(for name: KeyboardShortcuts.Name) -> KeyboardShortcuts.Name? {
+        guard let combo = KeyboardShortcuts.getShortcut(for: name) else { return nil }
+        return Self.conflictingAction(for: combo, recording: name, bindings: liveBindings())
+    }
+
+    static func showConflictAlert(owner: KeyboardShortcuts.Name) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "settings.shortcuts.conflict.alert".localized(arguments: displayName(for: owner))
+        ModelessAlert.show(alert)
     }
 
     /// The first live action other than `recording` that already uses `combo`,
@@ -130,9 +168,11 @@ final class ShortcutConflictGuard {
     private func liveBindings() -> [(name: KeyboardShortcuts.Name, shortcut: KeyboardShortcuts.Shortcut?)] {
         let settings = SettingsManager.shared
         return Self.liveActions(
+            toggleRecordingMode: settings.toggleRecordingMode,
             pushToTalkMode: settings.pushToTalkMode,
             quickCaptureEnabled: settings.quickCaptureEnabled,
-            streamingEnabled: settings.streamingEnabled
+            streamingEnabled: settings.streamingEnabled,
+            appliedConfiguration: recordingConfiguration?()
         ).map { ($0, KeyboardShortcuts.getShortcut(for: $0)) }
     }
 

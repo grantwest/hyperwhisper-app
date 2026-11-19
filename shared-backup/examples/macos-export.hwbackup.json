@@ -130,8 +130,9 @@
           "historyRetentionDays": 30
         },
         "shortcuts": {
-          "pushToTalkMode": "disabled",
+          "pushToTalkMode": "rightCommand",
           "pushToTalkDoublePressEnabled": false,
+          "toggleRecordingMode": "custom",
           "keyboardShortcuts": {
             "toggleRecordingWithTranscription": { "carbonKeyCode": 32, "carbonModifiers": 4608 },
             "cancelRecording": { "carbonKeyCode": 53, "carbonModifiers": 0 },
